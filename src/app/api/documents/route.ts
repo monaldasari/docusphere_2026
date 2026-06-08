@@ -12,7 +12,12 @@ export async function GET() {
   }
 
   const documents = await prisma.document.findMany({
-    where: { ownerId: session.userId as string },
+    where: {
+      OR: [
+        { ownerId: session.userId as string },
+        { collaborators: { some: { userId: session.userId as string } } },
+      ],
+    },
     orderBy: { updatedAt: "desc" },
   });
 

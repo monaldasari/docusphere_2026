@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { api, Document } from "@/lib/api";
+import { api, Document, User } from "@/lib/api";
 import {
   Plus, Search, Star, StarOff, Trash2, Share2, MoreHorizontal,
   FileText, Clock, Grid3X3, List, LogOut, Settings, ChevronDown,
@@ -17,9 +17,14 @@ type FilterMode = "all" | "owned" | "shared" | "starred";
 export default function DashboardPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createTitle, setCreateTitle] = useState("Untitled Document");
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [renameDocumentId, setRenameDocumentId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
@@ -30,6 +35,10 @@ export default function DashboardPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileUploading, setProfileUploading] = useState(false);
+  const profileInputRef = useRef<HTMLInputElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -41,7 +50,9 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
-      setUser(userData);
+      const storedProfile = typeof window !== "undefined" ? localStorage.getItem("docusphere-user-profile") : null;
+      const savedProfile = storedProfile ? JSON.parse(storedProfile) : null;
+      setUser({ ...userData, avatarUrl: savedProfile?.avatarUrl || undefined });
       setDocuments(docs);
     } catch {
       router.push("/login");
@@ -52,11 +63,26 @@ export default function DashboardPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const handleCreateDocument = async () => {
+    setCreateTitle("Untitled Document");
+    setCreateModalOpen(true);
+  };
+
+  const confirmCreateDocument = async () => {
     setCreating(true);
     try {
       const doc = await api.documents.create({
-        title: "Untitled Document",
+        title: createTitle.trim() || "Untitled Document",
         emoji: "📄",
       });
       router.push(`/editor/${doc.id}`);
@@ -64,6 +90,13 @@ export default function DashboardPage() {
       console.error(err);
       setCreating(false);
     }
+  };
+
+  const handleRename = (doc: Document) => {
+    setRenameDocumentId(doc.id);
+    setRenameTitle(doc.title);
+    setRenameModalOpen(true);
+    setContextMenu(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -103,7 +136,7 @@ export default function DashboardPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleInvite = async (e: React.FormEvent) => {
+  const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
     if (!shareModal || !inviteEmail) return;
     setInviting(true);
@@ -120,9 +153,56 @@ export default function DashboardPage() {
     }
   };
 
+  const confirmRenameDocument = async () => {
+    if (!renameDocumentId) return;
+    try {
+      const updated = await api.documents.update(renameDocumentId, {
+        title: renameTitle.trim() || "Untitled Document",
+      });
+      setDocuments((prev) => prev.map((d) => (d.id === renameDocumentId ? { ...d, title: updated.title } : d)));
+      setRenameModalOpen(false);
+      setRenameDocumentId(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleLogout = async () => {
     await api.auth.logout();
     router.push("/login");
+  };
+
+  const handleProfilePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+
+    reader.onload = async (loadEvent) => {
+      const avatarUrl = loadEvent.target?.result as string;
+      setProfileUploading(true);
+      try {
+        const storedProfile = typeof window !== "undefined" ? localStorage.getItem("docusphere-user-profile") : null;
+        const existingProfile = storedProfile ? JSON.parse(storedProfile) : {};
+        const updatedUser = { ...(user || {}), avatarUrl };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "docusphere-user-profile",
+            JSON.stringify({ ...existingProfile, avatarUrl })
+          );
+        }
+        setUser(updatedUser as any);
+      } catch (error) {
+        console.error("Failed to update profile pic", error);
+      } finally {
+        setProfileUploading(false);
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const triggerProfileUpload = () => {
+    profileInputRef.current?.click();
   };
 
   // Filtering & sorting
@@ -220,41 +300,133 @@ export default function DashboardPage() {
               {viewMode === "grid" ? <List className="w-5 h-5" /> : <Grid3X3 className="w-5 h-5" />}
             </button>
 
-            {/* User avatar */}
-            <div className="relative group">
-              <button className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shadow-md">
-                {user?.name?.[0]?.toUpperCase() || "U"}
-              </button>
-              <div className="absolute right-0 top-12 w-56 bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 py-2">
-                <div className="px-4 py-2 border-b border-[var(--border)]">
-                  <p className="text-sm font-semibold text-[var(--foreground)]">{user?.name}</p>
-                  <p className="text-xs text-[var(--muted)]">{user?.email}</p>
-                </div>
-                <div className="px-4 py-2 border-b border-[var(--border)]">
-                  <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span>{user?.streak || 1} day streak 🔥</span>
-                  </div>
-                </div>
-                {user?.role === "admin" && (
-                  <button
-                    onClick={() => router.push("/admin")}
-                    className="w-full px-4 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--surface-hover)] flex items-center gap-2"
-                  >
-                    <Settings className="w-4 h-4" /> Admin Panel
-                  </button>
+            <div ref={profileRef} className="relative">
+              <button
+                onClick={() => setProfileOpen((open) => !open)}
+                className="w-9 h-9 rounded-full overflow-hidden border border-[var(--border)] bg-[var(--background)] flex items-center justify-center text-white font-semibold text-sm shadow-md transition-all"
+                title="Open profile"
+              >
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="bg-gradient-to-br from-indigo-500 to-purple-600 w-full h-full flex items-center justify-center text-white text-sm font-semibold">
+                    {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "U"}
+                  </span>
                 )}
-                <button
-                  onClick={handleLogout}
-                  className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2"
-                >
-                  <LogOut className="w-4 h-4" /> Sign Out
-                </button>
-              </div>
+              </button>
+
+              <AnimatePresence>
+                {profileOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-12 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl z-50 overflow-hidden"
+                  >
+                    <div className="px-4 py-4 border-b border-[var(--border)]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-[var(--background)] border border-[var(--border)]">
+                          {user?.avatarUrl ? (
+                            <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-base font-semibold">
+                              {user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "U"}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--foreground)]">{user?.name || "Your profile"}</p>
+                          <p className="text-xs text-[var(--muted)] truncate">{user?.email}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3 space-y-2">
+                      <button
+                        onClick={() => router.push("/profile")}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)] transition-all"
+                      >
+                        Profile settings
+                      </button>
+                      <button
+                        onClick={triggerProfileUpload}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)] transition-all flex items-center justify-between"
+                      >
+                        <span>{profileUploading ? "Uploading..." : "Change picture"}</span>
+                        <span className="text-xs text-[var(--muted)]">PNG, JPG</span>
+                      </button>
+                      {user?.role === "admin" && (
+                        <button
+                          onClick={() => router.push("/admin")}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)] transition-all"
+                        >
+                          Admin panel
+                        </button>
+                      )}
+                      <button
+                        onClick={handleLogout}
+                        className="w-full rounded-xl px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-all"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+          <input
+            ref={profileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleProfilePhotoChange}
+          />
+        </div>
+      </header>
+
+      <div className="max-w-[1400px] mx-auto px-4 py-6">
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)] mb-2">Welcome back</p>
+            <h1 className="text-2xl font-semibold text-[var(--foreground)] truncate">
+              {user ? `Hello, ${user.name || user.email.split("@")[0]}` : "Welcome to DocuSphere"}
+            </h1>
+            <p className="mt-2 text-sm text-[var(--muted)] max-w-2xl">
+              Manage documents, customize your profile, and continue collaborating with your team.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => router.push("/profile")}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface-hover)] transition-all"
+            >
+              Profile settings
+            </button>
+            <button
+              onClick={handleCreateDocument}
+              className="rounded-2xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--accent-dark)] transition-all"
+            >
+              New document
+            </button>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm mb-6">
+          <p className="text-sm font-semibold text-[var(--foreground)]">Welcome to DocuSphere</p>
+          <p className="text-xs text-[var(--muted)] mt-1">Create or open a document, then use the editor toolbar to format text, add color, set page layout, and share with your team.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3 text-[12px] text-[var(--foreground)]">
+            <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+              <strong>Create:</strong> click + to make a new document and start typing.
+            </div>
+            <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+              <strong>Organize:</strong> search, sort, and filter documents with the top controls.
+            </div>
+            <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+              <strong>Rename:</strong> open the rename modal from the document menu to update titles.
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* ── Main Content ── */}
       <main className="max-w-[1400px] mx-auto px-4 py-8">
@@ -360,10 +532,15 @@ export default function DashboardPage() {
                     <h3 className="text-sm font-semibold text-[var(--foreground)] truncate mb-1">
                       {doc.title}
                     </h3>
-                    <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                    <p className="text-xs text-[var(--muted)] line-clamp-2 mb-2">
+                      {doc.excerpt || "No preview available"}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--muted)]">
                       <Clock className="w-3 h-3" />
                       <span>{formatDate(doc.updatedAt)}</span>
-                      {doc.shared && <Users className="w-3 h-3 ml-1 text-[var(--accent)]" />}
+                      {doc.shared && <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold">Shared</span>}
+                      {!doc.shared && <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">Private</span>}
+                      {doc.ownerId !== user?.id && <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold">Collaborator</span>}
                       {doc.starred && <Star className="w-3 h-3 ml-1 text-amber-500 fill-amber-500" />}
                     </div>
                   </div>
@@ -402,6 +579,12 @@ export default function DashboardPage() {
                         >
                           <Share2 className="w-3.5 h-3.5" /> Share
                         </button>
+                        <button
+                          onClick={() => handleRename(doc)}
+                          className="w-full px-3 py-2 text-left text-xs font-medium text-[var(--foreground)] hover:bg-[var(--surface-hover)] flex items-center gap-2"
+                        >
+                          <File className="w-3.5 h-3.5" /> Rename
+                        </button>
                         <hr className="my-1 border-[var(--border)]" />
                         <button
                           onClick={() => handleDelete(doc.id)}
@@ -437,12 +620,24 @@ export default function DashboardPage() {
                   className="grid grid-cols-[auto_1fr_120px_100px_40px] items-center px-4 py-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--surface-hover)] cursor-pointer transition-colors group"
                 >
                   <span className="text-xl w-10">{doc.emoji}</span>
-                  <span className="text-sm font-medium text-[var(--foreground)] truncate">{doc.title}</span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-[var(--foreground)] truncate">{doc.title}</div>
+                    <p className="text-xs text-[var(--muted)] line-clamp-2">{doc.excerpt || "No preview available"}</p>
+                  </div>
                   <span className="text-xs text-[var(--muted)]">{formatDate(doc.updatedAt)}</span>
-                  <div className="flex items-center gap-1.5">
-                    {doc.shared && (
-                      <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-semibold">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {doc.shared ? (
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 text-[10px] font-semibold">
                         Shared
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                        Private
+                      </span>
+                    )}
+                    {doc.ownerId !== user?.id && (
+                      <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold">
+                        Collaborator
                       </span>
                     )}
                     {doc.starred && <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />}
@@ -493,6 +688,12 @@ export default function DashboardPage() {
                 const doc = documents.find((d) => d.id === shareModal);
                 if (!doc?.inviteToken) return <p className="text-sm text-[var(--muted)]">Generating share link...</p>;
                 const link = `${typeof window !== "undefined" ? window.location.origin : ""}/join/${doc.inviteToken}`;
+                    <button
+                      onClick={() => handleRename(doc)}
+                      className="w-full px-3 py-2 text-left text-xs font-medium text-[var(--foreground)] hover:bg-[var(--surface-hover)] flex items-center gap-2"
+                    >
+                      <File className="w-3.5 h-3.5" /> Rename
+                    </button>
                 return (
                   <div className="space-y-6">
                     {/* Invite by Email */}
@@ -548,6 +749,92 @@ export default function DashboardPage() {
                   </div>
                 );
               })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {createModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+            onClick={(e) => e.target === e.currentTarget && setCreateModalOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 28 }}
+              className="surface w-full max-w-sm overflow-hidden rounded-3xl"
+              style={{ boxShadow: "0 32px 64px rgba(0,0,0,0.25)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-base" style={{ color: "var(--foreground)" }}>Create document</h3>
+                    <p className="text-xs text-[var(--muted)] mt-1">Write a friendly file name before creating.</p>
+                  </div>
+                  <button onClick={() => setCreateModalOpen(false)} className="w-7 h-7 rounded-lg text-[var(--muted)] hover:bg-[var(--surface-hover)] flex items-center justify-center">×</button>
+                </div>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">File name</label>
+                <input
+                  className="input-base w-full text-sm"
+                  value={createTitle}
+                  onChange={(e) => setCreateTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") confirmCreateDocument(); }}
+                  placeholder="Untitled Document"
+                />
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setCreateModalOpen(false)} className="btn-ghost px-4 py-2 text-sm">Cancel</button>
+                  <button onClick={confirmCreateDocument} className="btn-primary px-4 py-2 text-sm">Create</button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {renameModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+            onClick={(e) => e.target === e.currentTarget && setRenameModalOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 28 }}
+              className="surface w-full max-w-sm overflow-hidden rounded-3xl"
+              style={{ boxShadow: "0 32px 64px rgba(0,0,0,0.25)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-base" style={{ color: "var(--foreground)" }}>Rename document</h3>
+                    <p className="text-xs text-[var(--muted)] mt-1">Give your document a new title.</p>
+                  </div>
+                  <button onClick={() => setRenameModalOpen(false)} className="w-7 h-7 rounded-lg text-[var(--muted)] hover:bg-[var(--surface-hover)] flex items-center justify-center">×</button>
+                </div>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Document name</label>
+                <input
+                  className="input-base w-full text-sm"
+                  value={renameTitle}
+                  onChange={(e) => setRenameTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") confirmRenameDocument(); }}
+                  placeholder="Untitled Document"
+                />
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setRenameModalOpen(false)} className="btn-ghost px-4 py-2 text-sm">Cancel</button>
+                  <button onClick={confirmRenameDocument} className="btn-primary px-4 py-2 text-sm">Rename</button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

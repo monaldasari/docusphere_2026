@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { logEvent } from "@/lib/analytics";
-
 // Force dynamic rendering — this route reads cookies for session auth
 export const dynamic = "force-dynamic";
 

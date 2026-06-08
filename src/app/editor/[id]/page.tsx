@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 
 import StarterKit from "@tiptap/starter-kit";
@@ -8,7 +8,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { Extension, Node, Mark } from "@tiptap/core";
+import { Extension, Node as TiptapNode, Mark } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
 import Highlight from "@tiptap/extension-highlight";
@@ -45,7 +45,7 @@ import { useRouter } from "next/navigation";
 import SlashCommandMenu from "@/components/SlashCommandMenu";
 import EditorToolbar from "@/components/EditorToolbar";
 import { useTheme } from "@/components/ThemeProvider";
-import { User } from "@/lib/api";
+import { api, User } from "@/lib/api";
 
 type SaveStatus = "idle" | "saving" | "saved";
 
@@ -139,7 +139,7 @@ const CustomLink = Mark.create({
   },
 })
 
-const Table = Node.create({
+const Table = TiptapNode.create({
   name: 'table',
   addOptions() { return { HTMLAttributes: { class: 'border-collapse table-auto w-full my-4 border border-[var(--border)]' } } },
   content: 'tableRow+',
@@ -148,14 +148,14 @@ const Table = Node.create({
   renderHTML({ HTMLAttributes }) { return ['table', HTMLAttributes, 0] },
 })
 
-const TableRow = Node.create({
+const TableRow = TiptapNode.create({
   name: 'tableRow',
   content: '(tableCell | tableHeader)*',
   parseHTML() { return [{ tag: 'tr' }] },
   renderHTML() { return ['tr', 0] },
 })
 
-const TableCell = Node.create({
+const TableCell = TiptapNode.create({
   name: 'tableCell',
   content: 'block+',
   addOptions() { return { HTMLAttributes: { class: 'border border-[var(--border)] p-2 min-w-[100px]' } } },
@@ -163,7 +163,7 @@ const TableCell = Node.create({
   renderHTML({ HTMLAttributes }) { return ['td', HTMLAttributes, 0] },
 })
 
-const TableHeader = Node.create({
+const TableHeader = TiptapNode.create({
   name: 'tableHeader',
   content: 'block+',
   addOptions() { return { HTMLAttributes: { class: 'border border-[var(--border)] p-2 min-w-[100px] bg-[var(--surface-hover)] font-bold text-left' } } },
@@ -171,7 +171,7 @@ const TableHeader = Node.create({
   renderHTML({ HTMLAttributes }) { return ['th', HTMLAttributes, 0] },
 })
 
-const Image = Node.create({
+const Image = TiptapNode.create({
   name: 'image',
   inline: true,
   group: 'inline',
@@ -217,11 +217,17 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   const [pageSize, setPageSize] = useState<"a4" | "letter" | "legal">("a4");
   const [readMode, setReadMode] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | undefined>(undefined);
+  const [saveAsModalOpen, setSaveAsModalOpen] = useState(false);
+  const [saveAsName, setSaveAsName] = useState("");
   const [painterActive, setPainterActive] = useState(false);
   const [painterMarks, setPainterMarks] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [replaceTerm, setReplaceTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileUploading, setProfileUploading] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const profileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const isInitialLoad = useRef(true);
@@ -245,7 +251,7 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   const [inviteEmailInput, setInviteEmailInput] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [initialContent, setInitialContent] = useState("");
 
   const [userColor] = useState(() =>
     ["#6366f1", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7"][Math.floor(Math.random() * 6)]
@@ -255,26 +261,40 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   useEffect(() => { titleRef.current = title; }, [title]);
 
   useEffect(() => {
-    setIsLoading(false);
-    import("@/lib/api").then(({ api }) => api.auth.me().then(setCurrentUser));
-
     import("@/lib/api").then(({ api }) => {
-      api.documents.get(params.id).then((doc) => {
+      api.auth.me().then((user) => {
+        const storedProfile = typeof window !== "undefined" ? localStorage.getItem("docusphere-user-profile") : null;
+        const savedProfile = storedProfile ? JSON.parse(storedProfile) : null;
+        if (user) {
+          setCurrentUser({ ...user, avatarUrl: savedProfile?.avatarUrl || undefined });
+        }
+      });
+
+      api.documents.get(params.id)
+      .then((doc) => {
         setTitle(doc.title || "Untitled Document");
         setDocEmoji(doc.emoji || "📄");
         setIsShared(doc.shared || false);
         setIsStarred(doc.starred || false);
         setInviteToken(doc.inviteToken || undefined);
-
-        if (doc.content && editor && isInitialLoad.current) {
-          if (ydoc.getText().length === 0) {
-            editor.commands.setContent(doc.content);
+        setInitialContent(doc.content || "");
+      })
+      .catch(() => {
+        const stored = typeof window !== "undefined" ? localStorage.getItem(`docusphere-doc-${params.id}`) : null;
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            setTitle(parsed.title || "Untitled Document");
+            setInitialContent(parsed.content || "");
+          } catch {
+            setTitle("Untitled Document");
           }
-          isInitialLoad.current = false;
+        } else {
+          setTitle("Untitled Document");
         }
-      }).catch(() => setTitle("Untitled Document"));
-    });
-  }, [params.id]); // Note: Editor is intentionally missing here
+      });
+  });
+}, [params.id]);
 
   // ResizeObserver for page break calculation
   useEffect(() => {
@@ -355,7 +375,19 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
         } catch { setSaveStatus('idle'); }
       }, 2000);
     },
-  }, []);
+  }, [provider]);
+
+  useEffect(() => {
+    if (!editor || !isInitialLoad.current) return;
+    if (initialContent) {
+      editor.commands.setContent(initialContent);
+    }
+    isInitialLoad.current = false;
+  }, [editor, initialContent]);
+
+  useEffect(() => {
+    setSaveAsName(title || "Untitled Document");
+  }, [title]);
 
   // Update cursor name when user data loads (only in collaborative mode)
   useEffect(() => {
@@ -440,40 +472,105 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   }, [title, docEmoji, isShared, isStarred, inviteToken, params.id]);
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSlashOpen(false); };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, []);
+   const handleClickOutside = (event: MouseEvent) => {
+    if (
+      profileRef.current &&
+      !profileRef.current.contains(event.target as globalThis.Node)
+    ) {
+      setProfileOpen(false);
+    }
+  };
 
-  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  document.addEventListener("mousedown", handleClickOutside);
+
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, []);
+  const handleTitleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") editor?.commands.focus();
   };
 
   const handleManualSave = useCallback(async () => {
-    if (!editor) return;
-    setSaveStatus("saving");
-    const content = editor.getHTML();
-    const text = editor.getText();
-    const stored = localStorage.getItem(`docusphere-doc-${params.id}`);
-    const existing = stored ? JSON.parse(stored) : {};
-    localStorage.setItem(`docusphere-doc-${params.id}`, JSON.stringify({
-      ...existing, content, title, excerpt: text.slice(0, 120) + (text.length > 120 ? "..." : ""), updatedAt: new Date().toISOString(),
-    }));
-    try {
-      const { api } = await import("@/lib/api");
-      await api.documents.update(params.id, {
-        title,
+    setSaveAsName(title || "Untitled Document");
+    setSaveAsModalOpen(true);
+  }, [title]);
+
+  const saveDocument = useCallback(
+    async (newTitle?: string) => {
+      if (!editor) return;
+      const titleToSave = newTitle?.trim() || title || "Untitled Document";
+      setSaveStatus("saving");
+      const content = editor.getHTML();
+      const text = editor.getText();
+      const excerpt = text.trim().slice(0, 120) + (text.length > 120 ? "..." : "");
+      const stored = localStorage.getItem(`docusphere-doc-${params.id}`);
+      const existing = stored ? JSON.parse(stored) : {};
+      localStorage.setItem(`docusphere-doc-${params.id}`, JSON.stringify({
+        ...existing,
         content,
-        excerpt: text.slice(0, 120) + (text.length > 120 ? "..." : ""),
-      });
-    } catch {}
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2000);
-  }, [editor, params.id, title]);
+        title: titleToSave,
+        excerpt,
+        updatedAt: new Date().toISOString(),
+      }));
+      try {
+        const { api } = await import("@/lib/api");
+        const updated = await api.documents.update(params.id, {
+          title: titleToSave,
+          content,
+          excerpt,
+        });
+        setTitle(titleToSave);
+        if ((updated as any)?.inviteToken) setInviteToken((updated as any).inviteToken);
+      } catch {
+        triggerToast("Unable to save document right now.");
+      }
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    },
+    [editor, params.id, title, triggerToast]
+  );
+
+  const confirmSaveAs = async () => {
+    setSaveAsModalOpen(false);
+    await saveDocument(saveAsName);
+  };
+
+  const handleProfilePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      const avatarUrl = loadEvent.target?.result as string;
+      setProfileUploading(true);
+      try {
+        const storedProfile = typeof window !== "undefined" ? localStorage.getItem("docusphere-user-profile") : null;
+        const existingProfile = storedProfile ? JSON.parse(storedProfile) : {};
+        const updated = { ...(currentUser || {}), avatarUrl };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "docusphere-user-profile",
+            JSON.stringify({ ...existingProfile, avatarUrl })
+          );
+        }
+        setCurrentUser(updated as any);
+        triggerToast("Profile picture updated!");
+      } catch (error) {
+        console.error("Failed to update profile pic", error);
+        triggerToast("Unable to update profile picture.");
+      } finally {
+        setProfileUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const triggerProfileUpload = () => profileInputRef.current?.click();
 
   return (
     <div
-      className="min-h-screen flex flex-col bg-cover bg-center bg-fixed"
+      className="min-h-screen flex flex-col bg-cover bg-center bg-fixed editor-page"
       style={{ backgroundColor: "var(--background)", backgroundImage: "url('/background.jpg')" }}
     >
       {/* Top bar */}
@@ -586,9 +683,85 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
                 </AnimatePresence>
               </button>
 
+              <div ref={profileRef} className="relative">
+                <button
+                  onClick={() => setProfileOpen((open) => !open)}
+                  className="btn-ghost w-8 h-8 justify-center p-0 rounded-full overflow-hidden border border-[var(--border)]"
+                  title="Open profile"
+                >
+                  {currentUser?.avatarUrl ? (
+                    <img src={currentUser.avatarUrl} alt="Profile" className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    <span className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-semibold">
+                      {currentUser?.name?.[0]?.toUpperCase() || currentUser?.email?.[0]?.toUpperCase() || "U"}
+                    </span>
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {profileOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-10 w-64 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl z-50 overflow-hidden"
+                    >
+                      <div className="px-4 py-4 border-b border-[var(--border)]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--background)] border border-[var(--border)]">
+                            {currentUser?.avatarUrl ? (
+                              <img src={currentUser.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-semibold">
+                                {currentUser?.name?.[0]?.toUpperCase() || currentUser?.email?.[0]?.toUpperCase() || "U"}
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--foreground)]">{currentUser?.name || "Your profile"}</p>
+                            <p className="text-xs text-[var(--muted)] truncate">{currentUser?.email}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-4 py-3 space-y-2">
+                        <button
+                          onClick={() => router.push("/profile")}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)] transition-all"
+                        >
+                          Profile settings
+                        </button>
+                        <button
+                          onClick={triggerProfileUpload}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-hover)] transition-all"
+                        >
+                          {profileUploading ? "Uploading..." : "Change picture"}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await api.auth.logout();
+                            router.push("/login");
+                          }}
+                          className="w-full rounded-xl px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-all"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <button onClick={() => setFocusMode(!focusMode)} className="btn-ghost w-8 h-8 justify-center p-0">
                 <Maximize2 size={14} />
               </button>
+              <input
+                type="file"
+                ref={profileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleProfilePhotoChange}
+              />
             </div>
           </motion.header>
         )}
@@ -637,6 +810,26 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
           </motion.div>
         )}
       </AnimatePresence>
+
+      <div className="mx-auto w-full max-w-[1400px] px-4 py-3">
+        <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-[var(--foreground)]">New to DocuSphere?</p>
+            <p className="text-xs text-[var(--muted)]">Start typing on the white page, then use the top toolbar to style text, change page settings, and save. The color swatches on the Home tab let you change the text color instantly.</p>
+            <div className="grid gap-2 sm:grid-cols-3 text-[12px] text-[var(--foreground)]">
+              <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+                <strong>Toolbar:</strong> formatting, font, and text colors in one place.
+              </div>
+              <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+                <strong>Save:</strong> use the Save button to preserve your title, content, and excerpt.
+              </div>
+              <div className="rounded-2xl bg-[var(--background)] p-3 border border-[var(--border)]">
+                <strong>Share:</strong> open the Share panel to invite collaborators and manage links.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <input
         type="file" ref={fileInputRef} style={{ display: 'none' }} accept="image/*"
@@ -774,6 +967,59 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
                 editor.commands.setContent(newContent);
               }}>Replace All</button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {saveAsModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+            onClick={(e) => e.target === e.currentTarget && setSaveAsModalOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 28 }}
+              className="surface w-full max-w-sm overflow-hidden rounded-3xl"
+              style={{ boxShadow: "0 32px 64px rgba(0,0,0,0.25)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-base" style={{ color: "var(--foreground)" }}>Save document</h3>
+                    <p className="text-xs text-[var(--muted)] mt-1">Enter the file name before saving.</p>
+                  </div>
+                  <button onClick={() => setSaveAsModalOpen(false)} className="w-7 h-7 rounded-lg text-[var(--muted)] hover:bg-[var(--surface-hover)] flex items-center justify-center">×</button>
+                </div>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">File name</label>
+                <input
+                  className="input-base w-full text-sm"
+                  value={saveAsName}
+                  onChange={(e) => setSaveAsName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") confirmSaveAs(); }}
+                  placeholder="Untitled Document"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setSaveAsModalOpen(false)}
+                    className="btn-ghost px-4 py-2 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmSaveAs}
+                    className="btn-primary px-4 py-2 text-sm"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -959,8 +1205,6 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
 export default function EditorPage({ params }: EditorPageProps) {
   const [ydoc] = useState(() => new Y.Doc());
   const [provider, setProvider] = useState<HocuspocusProvider | null>(null);
-  // Start as true so we NEVER block on WebSocket — editor renders immediately
-  const [ready, setReady] = useState(true);
 
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
@@ -999,6 +1243,6 @@ export default function EditorPage({ params }: EditorPageProps) {
   }, [params.id, ydoc]);
 
   // Always render — provider may be null (offline mode) or a live WS instance
-  return <EditorWorkspace params={params} ydoc={ydoc} provider={provider as any} />;
+  return <EditorWorkspace params={params} ydoc={ydoc} provider={provider} />;
 }
 

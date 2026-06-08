@@ -68,8 +68,18 @@ export async function POST(req: NextRequest) {
         role: user.role,
       },
     });
-  } catch (error: any) {
-    console.error("Register error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+   } catch (error: any) {
+console.error("REGISTER ERROR FULL:");
+console.error(error);
+
+return NextResponse.json(
+{
+error: String(error),
+message: error?.message,
+stack: error?.stack,
+},
+{ status: 500 }
+);
+}
+
 }

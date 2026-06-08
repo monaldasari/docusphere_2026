@@ -248,19 +248,22 @@ export default function EditorToolbar({
                   <RibbonButton icon={<Strikethrough size={14} />} label="Strike" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()} />
                   <div className="w-px h-6 mx-1 bg-[rgba(var(--border-rgb),0.2)]" />
                   <RibbonButton icon={<Highlighter size={14} />} label="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()} />
-                  <div className="flex items-center gap-1 bg-[rgba(var(--surface-rgb),0.3)] p-1 rounded border border-[rgba(var(--border-rgb),0.2)]">
-                    {['#000000', '#ef4444', '#3b82f6', '#22c55e'].map(c => (
-                      <button key={c} onClick={() => editor.chain().focus().setColor(c).run()} className="w-4 h-4 rounded-full border shadow-sm transition-transform hover:scale-110" style={{ backgroundColor: c, borderColor: 'rgba(var(--border-rgb), 0.5)' }} title="Text Color" />
-                    ))}
-                    <div className="w-px h-4 bg-[rgba(var(--border-rgb),0.3)] mx-0.5" />
-                    <button onClick={() => {
-                      const picker = document.createElement('input');
-                      picker.type = 'color';
-                      picker.onchange = (e: any) => editor.chain().focus().setColor(e.target.value).run();
-                      picker.click();
-                    }} className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] hover:bg-[var(--surface-hover)]" title="More Colors">
-                      <Palette size={12} />
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--muted)]">Text Color</span>
+                    <div className="flex items-center gap-1 bg-[rgba(var(--surface-rgb),0.3)] p-1 rounded border border-[rgba(var(--border-rgb),0.2)]">
+                      {['#000000', '#ef4444', '#3b82f6', '#22c55e'].map(c => (
+                        <button key={c} onClick={() => editor.chain().focus().setColor(c).run()} className="w-4 h-4 rounded-full border shadow-sm transition-transform hover:scale-110" style={{ backgroundColor: c, borderColor: 'rgba(var(--border-rgb), 0.5)' }} title="Text Color" />
+                      ))}
+                      <div className="w-px h-4 bg-[rgba(var(--border-rgb),0.3)] mx-0.5" />
+                      <button onClick={() => {
+                        const picker = document.createElement('input');
+                        picker.type = 'color';
+                        picker.onchange = (e: any) => editor.chain().focus().setColor(e.target.value).run();
+                        picker.click();
+                      }} className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] hover:bg-[var(--surface-hover)]" title="More Colors">
+                        <Palette size={12} />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-0.5 pl-1 justify-center border-l border-[rgba(var(--border-rgb),0.1)]">
                     <button
@@ -278,6 +281,9 @@ export default function EditorToolbar({
                       <Subscript size={12} />
                     </button>
                   </div>
+                </div>
+                <div className="mt-2 rounded-2xl border border-[rgba(var(--border-rgb),0.2)] bg-[var(--background)] p-3 text-[11px] text-[var(--muted)]">
+                  <span className="font-semibold text-[var(--foreground)]">Quick tip:</span> click a swatch to change the selected text color, or use the palette icon to choose any custom shade.
                 </div>
               </div>
             </RibbonGroup>

@@ -5,11 +5,20 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+
+  datasource: {
+    url: process.env.DIRECT_URL!,
+  },
+
   migrations: {
     path: "prisma/migrations",
   },
+
   adapter: () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({
+      connectionString: process.env.DIRECT_URL,
+    });
+
     return new PrismaPg(pool);
   },
 });

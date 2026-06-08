@@ -6,6 +6,7 @@ export interface Document {
   emoji: string;
   excerpt: string | null;
   content: string | null;
+  ownerId: string;
   updatedAt: string;
   updatedBy: string | null;
   starred: boolean;
@@ -19,6 +20,7 @@ export interface User {
   name: string | null;
   streak: number;
   role: string;
+  avatarUrl?: string | null;
 }
 
 export const api = {

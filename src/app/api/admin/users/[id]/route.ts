@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { logEvent } from "@/lib/analytics";
-
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }

@@ -15,9 +15,9 @@ import {
   Settings,
   User,
 } from "lucide-react";
-import { useTheme } from "@/components/ThemeProvider";
 import { useRouter } from "next/navigation";
 import { api, User as UserType } from "@/lib/api";
+import { useTheme } from "./ThemeProvider";
 
 interface NavbarProps {
   onNewDocument?: () => void;

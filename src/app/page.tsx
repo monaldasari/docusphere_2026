@@ -96,7 +96,10 @@ export default function LandingPage() {
               Start Writing Now
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
-            <button className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 font-semibold px-8 py-4 rounded-2xl transition-all">
+            <button
+              onClick={() => router.push(isLoggedIn ? "/dashboard" : "/login")}
+              className="w-full sm:w-auto bg-white/5 hover:bg-white/10 border border-white/10 font-semibold px-8 py-4 rounded-2xl transition-all"
+            >
               Watch Demo
             </button>
           </motion.div>

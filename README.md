@@ -10,18 +10,8 @@ DocuSphere is a **premium‑grade, web‑based collaborative editor** that lets 
 
 ## 📦 Use‑Case Scenarios
 | Scenario | Who Benefits | What They Achieve |
-|----------|--------------|-------------------|
-| **Team writing** | Remote teams, content creators | Simultaneous editing with live cursor presence.
-| **Personal knowledge base** | Individuals, students | Store notes with rich formatting, emojis, and task lists.
-| **Document review** | Managers, editors | Invite‑only sharing, comment‑free review via read‑only mode.
-| **Admin oversight** | System administrators | View, edit, disable, or delete any user/document from a dedicated admin UI.
 
 ## 🏗️ Architecture Overview
-```
-client (Next.js 14 + React) ──► TipTap editor (Yjs) ──► WebSocket (Hocuspocus)
-                                   │
-                                   ▼
-                               PostgreSQL (Supabase)
 ```
 - **Frontend**: Next.js App Router, TailwindCSS, Framer Motion for smooth UI.
 - **Realtime Layer**: Hocuspocus server (runs on `NEXT_PUBLIC_WEBSOCKET_URL`).
@@ -40,24 +30,12 @@ client (Next.js 14 + React) ──► TipTap editor (Yjs) ──► WebSocket (H
 │   ├─ app/
 │   │   ├─ admin/       # Admin panel (layout, pages, API)
 │   │   ├─ login/       # Login & auth UI
-│   │   ├─ editor/      # Main collaborative editor
-│   │   └─ …            # Other routes (dashboard, join, …)
-│   └─ lib/
 │       ├─ prisma.ts    # Prisma instance helper
 │       └─ admin.ts     # Admin‑role helper
-├─ src/styles/
-│   └─ admin.css       # Premium dark‑mode, glass‑morphism styling
-├─ .env                 # Runtime configuration (do NOT commit secrets)
-└─ README.md            # This documentation
 ```
 
-## ⚙️ Getting Started (From Scratch)
-1. **Clone the repo** and `cd docusphere`.
-2. **Install dependencies**:
-   ```bash
-   npm ci   # or `npm install`
    ```
-3. **Configure environment** – copy `.env.template` to `.env` and fill in:
+## 🚀 Production Launch Checklist
    - `DATABASE_URL` – Supabase PostgreSQL connection string.
    - `JWT_SECRET` – strong random string.
    - `NEXT_PUBLIC_SUPABASE_URL` & `NEXT_PUBLIC_SUPABASE_ANON_KEY` – Supabase client keys.
@@ -93,6 +71,27 @@ client (Next.js 14 + React) ──► TipTap editor (Yjs) ──► WebSocket (H
 - **Never expose `SUPABASE_SERVICE_ROLE_KEY` to the client** (it must stay server‑side only).
 - **Do not edit generated Prisma files manually**; always regenerate via `prisma generate`.
 - **Don’t mix UI libraries** – stick to TailwindCSS and the custom `admin.css` for a consistent premium look.
+
+## � Production Launch Checklist
+1. Confirm `.env` values are configured for production and never committed to Git.
+2. Validate your PostgreSQL/Supabase database has the latest schema and seed data:
+   - `psql "$DATABASE_URL" -f sql/schema.sql`
+   - `psql "$DATABASE_URL" -f sql/seed.sql`
+3. Run Prisma client generation before building or deploying:
+   - `npx prisma generate`
+4. Test local build and linting:
+   - `npm run build`
+   - `npm run lint`
+5. Deploy the app and WebSocket server together or separately:
+   - `NEXT_PUBLIC_WEBSOCKET_URL` must point to the live Hocuspocus socket endpoint.
+   - `websocket-server.js` must run in the production environment or on a supported Node host.
+6. Confirm auth and session cookies work over HTTPS and include the correct domain.
+7. Verify admin login and document sharing flows after deployment.
+
+### Recommended hosting
+- Vercel is a strong choice for the Next.js frontend and API routes.
+- Use a Node-capable host for the WebSocket server, or deploy it as a separate process.
+- Ensure the deployed `NEXT_PUBLIC_WEBSOCKET_URL` points to the active Hocuspocus endpoint.
 
 ## 🔐 Security Highlights
 - **Row‑Level Security** ensures users can only access their own data.
