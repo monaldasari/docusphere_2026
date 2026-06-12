@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "OTP has expired" }, { status: 401 });
     }
 
+    if (newPassword.length < 6) {
+      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+    }
+
     // Hash password
     const hashedPassword = await hashPassword(newPassword);
 

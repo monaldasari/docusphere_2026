@@ -99,7 +99,12 @@ export async function DELETE(
   }
 
   try {
-    // Check document
+    const { email } = await req.json();
+
+    if (!email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
     const doc = await prisma.document.findUnique({
       where: { id: params.id },
     });
@@ -108,26 +113,32 @@ export async function DELETE(
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
-    // Only owner can delete
     if (doc.ownerId !== session.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // 🔥 IMPORTANT: delete collaborators first (if relation exists)
-    await prisma.collaborator.deleteMany({
-      where: { documentId: params.id },
+    const userToRemove = await prisma.user.findUnique({
+      where: { email },
     });
 
-    // Delete document
-    await prisma.document.delete({
-      where: { id: params.id },
+    if (!userToRemove) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    await prisma.collaborator.delete({
+      where: {
+        documentId_userId: {
+          documentId: params.id,
+          userId: userToRemove.id,
+        },
+      },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("DELETE ERROR:", error);
+    console.error("Remove Collaborator Error:", error);
     return NextResponse.json(
-      { error: "Failed to delete document" },
+      { error: "Failed to remove collaborator" },
       { status: 500 }
     );
   }

@@ -18,7 +18,21 @@ async function main() {
     },
   });
 
-  console.log({ user });
+  // Create an admin user
+  const adminPassword = await bcrypt.hash("admin123", 10);
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@test.io" },
+    update: {},
+    create: {
+      email: "admin@test.io",
+      password: adminPassword,
+      name: "Admin User",
+      role: "admin",
+      streak: 5,
+    },
+  });
+
+  console.log({ user, admin });
 
   // Create initial documents
   const doc1 = await prisma.document.create({

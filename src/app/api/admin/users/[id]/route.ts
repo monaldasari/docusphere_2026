@@ -8,17 +8,30 @@ export async function PUT(
 ) {
   try {
     const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await req.json();
+
+    if (session.userId === params.id && body.role === "user") {
+      return NextResponse.json({ error: "You cannot demote yourself" }, { status: 400 });
+    }
+
+    // Only allow updating allowed fields
+    const updateData: any = {};
+    if (body.role !== undefined) updateData.role = body.role;
+    if (body.name !== undefined) updateData.name = body.name;
 
     const user = await prisma.user.update({
       where: { id: params.id },
-      data: body,
+      data: updateData,
     });
 
     await logEvent(session?.userId as string, "admin.action", undefined, {
       action: "update_user",
       targetId: params.id,
-      changes: body,
+      changes: updateData,
     });
 
     return NextResponse.json(user);
@@ -33,6 +46,13 @@ export async function DELETE(
 ) {
   try {
     const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (session.userId === params.id) {
+      return NextResponse.json({ error: "You cannot delete yourself" }, { status: 400 });
+    }
 
     await prisma.user.delete({ where: { id: params.id } });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export async function GET(
   req: NextRequest,
@@ -21,6 +22,23 @@ export async function GET(
 
   if (!document) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
+  }
+
+  const session = await getSession();
+  if (session && session.userId && document.ownerId !== session.userId) {
+    await prisma.collaborator.upsert({
+      where: {
+        documentId_userId: {
+          documentId: document.id,
+          userId: session.userId as string,
+        },
+      },
+      update: {},
+      create: {
+        documentId: document.id,
+        userId: session.userId as string,
+      },
+    }).catch(() => {});
   }
 
   return NextResponse.json(document);

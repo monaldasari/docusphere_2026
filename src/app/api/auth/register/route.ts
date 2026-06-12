@@ -69,17 +69,11 @@ export async function POST(req: NextRequest) {
       },
     });
    } catch (error: any) {
-console.error("REGISTER ERROR FULL:");
-console.error(error);
-
-return NextResponse.json(
-{
-error: String(error),
-message: error?.message,
-stack: error?.stack,
-},
-{ status: 500 }
-);
-}
+    console.error("Registration error:", error);
+    return NextResponse.json(
+      { error: error?.message || "Registration failed" },
+      { status: 500 }
+    );
+  }
 
 }

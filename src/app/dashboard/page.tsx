@@ -688,12 +688,6 @@ export default function DashboardPage() {
                 const doc = documents.find((d) => d.id === shareModal);
                 if (!doc?.inviteToken) return <p className="text-sm text-[var(--muted)]">Generating share link...</p>;
                 const link = `${typeof window !== "undefined" ? window.location.origin : ""}/join/${doc.inviteToken}`;
-                    <button
-                      onClick={() => handleRename(doc)}
-                      className="w-full px-3 py-2 text-left text-xs font-medium text-[var(--foreground)] hover:bg-[var(--surface-hover)] flex items-center gap-2"
-                    >
-                      <File className="w-3.5 h-3.5" /> Rename
-                    </button>
                 return (
                   <div className="space-y-6">
                     {/* Invite by Email */}

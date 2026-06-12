@@ -190,11 +190,15 @@ export default function Navbar({ onNewDocument }: NavbarProps) {
                       </p>
                     </div>
                     {[
-                      { icon: User, label: "Profile" },
-                      { icon: Settings, label: "Settings" },
-                    ].map(({ icon: Icon, label }) => (
+                      { icon: User, label: "Profile", path: "/profile" },
+                      { icon: Settings, label: "Settings", path: "/profile" },
+                    ].map(({ icon: Icon, label, path }) => (
                       <button
                         key={label}
+                        onClick={() => {
+                          setProfileOpen(false);
+                          router.push(path);
+                        }}
                         className="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-all"
                         style={{ color: "var(--foreground)" }}
                         onMouseEnter={(e) =>

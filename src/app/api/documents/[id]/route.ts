@@ -54,30 +54,58 @@ export async function PUT(
 
   const body = await req.json();
 
-  // Generate invite token when sharing
-  if (body.shared === true) {
-    const existing = await prisma.document.findUnique({
-      where: { id: params.id },
-      select: { inviteToken: true },
-    });
-    if (!existing?.inviteToken) {
-      const token =
-        Math.random().toString(36).substring(2, 8) +
-        Math.random().toString(36).substring(2, 8);
-      body.inviteToken = token;
+  const existingDoc = await prisma.document.findUnique({
+    where: { id: params.id },
+    include: {
+      collaborators: {
+        where: { userId: session.userId as string },
+      },
+    },
+  });
+
+  if (!existingDoc) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const isOwner = existingDoc.ownerId === session.userId;
+  const isCollaborator = existingDoc.collaborators.length > 0;
+  const isShared = existingDoc.shared;
+
+  if (!isOwner && !isCollaborator) {
+    if (isShared) {
+      // Add as collaborator
+      await prisma.collaborator.create({
+        data: {
+          documentId: params.id,
+          userId: session.userId as string,
+        },
+      }).catch(() => {});
+    } else {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 
-  const existingDoc = await prisma.document.findUnique({ where: { id: params.id } });
-  if (!existingDoc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (existingDoc.ownerId !== session.userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Sanitize update data
+  const updateData: any = {};
+  if (body.title !== undefined) updateData.title = body.title;
+  if (body.emoji !== undefined) updateData.emoji = body.emoji;
+  if (body.excerpt !== undefined) updateData.excerpt = body.excerpt;
+  if (body.content !== undefined) updateData.content = body.content;
+  if (body.starred !== undefined) updateData.starred = body.starred;
+  if (body.shared !== undefined) updateData.shared = body.shared;
+
+  if (body.shared === true && !existingDoc.inviteToken) {
+    updateData.inviteToken =
+      Math.random().toString(36).substring(2, 8) +
+      Math.random().toString(36).substring(2, 8);
+  }
+
+  updateData.updatedBy = session.email as string;
+  updateData.updatedAt = new Date();
 
   const document = await prisma.document.update({
     where: { id: params.id },
-    data: {
-      ...body,
-      updatedBy: session.email as string,
-    },
+    data: updateData,
   });
 
   await logEvent(session.userId as string, "document.edit", params.id);

@@ -251,7 +251,7 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   const [inviteEmailInput, setInviteEmailInput] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [initialContent, setInitialContent] = useState("");
+  const [initialContent, setInitialContent] = useState<string | null>(null);
 
   const [userColor] = useState(() =>
     ["#6366f1", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#a855f7"][Math.floor(Math.random() * 6)]
@@ -278,6 +278,10 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
         setIsStarred(doc.starred || false);
         setInviteToken(doc.inviteToken || undefined);
         setInitialContent(doc.content || "");
+        if (doc.collaborators) {
+          const emails = doc.collaborators.map((c: any) => c.user?.email).filter(Boolean);
+          setInvitedEmails(emails);
+        }
       })
       .catch(() => {
         const stored = typeof window !== "undefined" ? localStorage.getItem(`docusphere-doc-${params.id}`) : null;
@@ -378,10 +382,8 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
   }, [provider]);
 
   useEffect(() => {
-    if (!editor || !isInitialLoad.current) return;
-    if (initialContent) {
-      editor.commands.setContent(initialContent);
-    }
+    if (!editor || initialContent === null || !isInitialLoad.current) return;
+    editor.commands.setContent(initialContent);
     isInitialLoad.current = false;
   }, [editor, initialContent]);
 
@@ -491,11 +493,6 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
     if (e.key === "Enter") editor?.commands.focus();
   };
 
-  const handleManualSave = useCallback(async () => {
-    setSaveAsName(title || "Untitled Document");
-    setSaveAsModalOpen(true);
-  }, [title]);
-
   const saveDocument = useCallback(
     async (newTitle?: string) => {
       if (!editor) return;
@@ -530,6 +527,10 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
     },
     [editor, params.id, title, triggerToast]
   );
+
+  const handleManualSave = useCallback(async () => {
+    await saveDocument(title);
+  }, [title, saveDocument]);
 
   const confirmSaveAs = async () => {
     setSaveAsModalOpen(false);
@@ -1116,7 +1117,24 @@ function EditorWorkspace({ params, ydoc, provider }: { params: { id: string }, y
                           </div>
                           <span className="text-xs flex-1 truncate" style={{ color: "var(--foreground)" }}>{email}</span>
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>Can edit</span>
-                          <button className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-lg leading-none ml-1" onClick={() => setInvitedEmails(prev => prev.filter(e => e !== email))}>×</button>
+                          <button
+                            className="text-[var(--muted)] hover:text-[var(--foreground)] transition-colors text-lg leading-none ml-1"
+                            onClick={async () => {
+                              try {
+                                await fetch(`/api/documents/${params.id}/collaborators`, {
+                                  method: "DELETE",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ email }),
+                                });
+                                setInvitedEmails(prev => prev.filter(e => e !== email));
+                                triggerToast(`Removed ${email}`);
+                              } catch (err: any) {
+                                triggerToast("Failed to remove collaborator");
+                              }
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
                       ))}
                     </div>

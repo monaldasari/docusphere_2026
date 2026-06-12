@@ -12,6 +12,7 @@ export interface Document {
   starred: boolean;
   shared: boolean;
   inviteToken: string | null;
+  collaborators?: any[];
 }
 
 export interface User {

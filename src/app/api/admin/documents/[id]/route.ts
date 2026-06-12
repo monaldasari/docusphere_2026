@@ -36,8 +36,8 @@ export async function DELETE(
     console.log("🟡 Owner ID:", doc.ownerId);
     console.log("🟡 Session User ID:", session.userId);
 
-    if (doc.ownerId !== session.userId) {
-      console.log("❌ Forbidden - not owner");
+    if (session.role !== "admin") {
+      console.log("❌ Forbidden - not admin");
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
